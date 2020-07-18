@@ -2,7 +2,7 @@
 
 First implementation is music generation with LSTM. 
 
-![](generated score.png)
+![](generated_score.png)
 
 ### Requirements:
 
