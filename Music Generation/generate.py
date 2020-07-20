@@ -6,7 +6,7 @@ import argparse
 
 
 def save_melody(melody, file_name, step_duration=0.25, format='midi'):
-
+    """translate symbols to melody and save file with music21"""
     stream = M.stream.Stream()
 
     start_symbol = None # dummy head
@@ -24,12 +24,12 @@ def save_melody(melody, file_name, step_duration=0.25, format='midi'):
                 stream.append(event)
 
                 step_count = 1 # reset
-
             start_symbol = symbol
 
         else: # prolongation
             step_count += 1
     stream.write(format, file_name)
+
 
 
 if __name__=='__main__':
@@ -48,4 +48,4 @@ if __name__=='__main__':
                                 config.NUM_STEPS, args.temperature)
     # melody_long = model.generate_melody(config.NOTES_MAPPING, ' '.join(melody[:64]), 
     #                             config.NUM_STEPS, config.TEMPERATURE)
-    save_melody(melody, f'{args.file_name}.mid')
+    save_melody(melody, f'{config.OUTPUT_PATH}{args.file_name}.mid')

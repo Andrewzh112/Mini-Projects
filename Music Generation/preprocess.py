@@ -129,6 +129,7 @@ def note2idx(songs, mapping_path):
 
 
 def songs2int(songs):
+    """map symbols to int keys"""
     int_songs = []
 
     with open(MAPPING_PATH, "r") as fp:
@@ -143,6 +144,7 @@ def songs2int(songs):
 
 
 def generate_sequences(sequence_length):
+    """create inputs and targets data sequences"""
     inputs, targets = [], []
     songs = load_song(COLLATED_PATH)
     int_songs = songs2int(songs)
@@ -154,7 +156,7 @@ def generate_sequences(sequence_length):
     return np.array(inputs), np.array(targets)
 
 
-def main():
+def run():
     preprocess(CLASSICAL_DATA_PATH, SAVE_DIR, VALID_DURATIONS)
     songs = collate_songs(SAVE_DIR, COLLATED_PATH, SEQUENCE_LENGTH)
     note2idx(songs, MAPPING_PATH)
@@ -162,4 +164,4 @@ def main():
 
 
 if __name__=='__main__':
-    main()
+    run()
