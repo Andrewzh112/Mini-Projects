@@ -7,6 +7,7 @@ import config
 from model import (Classical_Music_LSTM, Classical_Music_CNN,
                    Classical_Music_Transformer)
 from preprocess import generate_sequences
+from transformers.optimization import get_linear_schedule_with_warmup
 
 
 def KL_Divergence(normal, pred_hidden):
@@ -67,9 +68,14 @@ def train(output_dim, num_layers, embedding_dim, hidden_size,
         model = Classical_Music_LSTM(embedding_dim, hidden_size, output_dim,
                                      num_layers, dropout, device,
                                      sequence_length).to(device)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr)
-
+    model.train()
+    optimizer = torch.optim.AdamW(model.parameters(), lr)
+    num_training_steps = len(song_loader) * epochs
+    num_warmup_steps = 5
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer, num_warmup_steps=num_warmup_steps,
+        num_training_steps=num_training_steps
+    )
     for epoch in tqdm(range(1, epochs+1), total=epochs):
         batch_losses = []
         start = time.time()
@@ -87,6 +93,7 @@ def train(output_dim, num_layers, embedding_dim, hidden_size,
 
             loss.backward()
             optimizer.step()
+            scheduler.step()
 
         print(f'Epoch {epoch}/{epochs},\tLoss {np.mean(batch_losses)}\
               ,\tDuration {time.time()-start}')
