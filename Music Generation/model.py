@@ -5,7 +5,6 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from collections import deque
 import numpy as np
 import math
-from tensorflow.keras.utils import to_categorical
 
 
 class Classical_Music_Generator:
@@ -15,10 +14,8 @@ class Classical_Music_Generator:
         seed = self._start_symbols + seed.split()
         seed = deque([mapping[symbol]
                       for symbol in seed], maxlen=self.sequence_length)
-        self.eval()
         for _ in range(num_steps):
-            onehot_seed = to_categorical(seed, num_classes=len(mapping))
-            seed_tensor = torch.from_numpy(onehot_seed).type(torch.LongTensor)\
+            seed_tensor = torch.tensor(seed).type(torch.LongTensor)\
                 .to(self.device)
             if self.model_type == 'CNN':
                 seed_tensor = seed_tensor.T
@@ -27,7 +24,7 @@ class Classical_Music_Generator:
                 output = self._generate_stochastic(seed_tensor, dropout_rounds)
             else:
                 output = self.forward(seed_tensor)[0]
-            output = torch.topk(output, topk)
+            output, _ = torch.topk(output, topk)
             output_int = self._sample_with_temperature(output, temperature)
             seed.append(output_int)
             output_symbol = [key for key,
@@ -46,10 +43,10 @@ class Classical_Music_Generator:
 
     def _generate_stochastic(self, seed_tensor, dropout_rounds):
         self.train()
-        outputs, _ = self.forward(seed_tensor)
+        outputs, _, _ = self.forward(seed_tensor)
         output = outputs[0]
         for _ in range(dropout_rounds):
-            additional_outputs, _ = self.forward(seed_tensor)
+            additional_outputs, _, _ = self.forward(seed_tensor)
             output = torch.add(output, additional_outputs[0])
         output /= (dropout_rounds+1)
         return output
@@ -120,7 +117,7 @@ class Classical_Music_CNN(nn.Module, Classical_Music_Generator):
 class Classical_Music_Transformer(nn.Module, Classical_Music_Generator):
     def __init__(self, embedding_size, hidden_size, output_size,
                  num_layers, dropout, device, nhead, sequence_length,
-                 latent_size=16):
+                 latent_size=8):
 
         super(Classical_Music_Transformer, self).__init__()
 
@@ -144,7 +141,7 @@ class Classical_Music_Transformer(nn.Module, Classical_Music_Generator):
         self.next_node_projection = nn.Sequential(
             nn.Linear(embedding_size, embedding_size//2),
             nn.ReLU(),
-            nn.Linear(embedding_size//2, latent_size)
+            nn.Linear(embedding_size//2, latent_size*2)
         )
         self.expand = nn.Sequential(
             nn.Linear(latent_size, embedding_size//2),
@@ -155,37 +152,53 @@ class Classical_Music_Transformer(nn.Module, Classical_Music_Generator):
         self._start_symbols = [self.stop_symbol] * sequence_length
         self.init_weights()
 
+    def reparameterize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        eps = std.data.new(std.size()).normal_()
+        return eps.mul(std).add_(mu)
+
     def init_weights(self):
         initrange = 0.1
         self.encoder.weight.data.uniform_(-initrange, initrange)
         self.decoder.bias.data.zero_()
         self.decoder.weight.data.uniform_(-initrange, initrange)
+        self.next_node_projection[0].bias.data.zero_()
+        self.next_node_projection[0].weight.data.uniform_(
+            -initrange, initrange
+        )
+        self.next_node_projection[2].bias.data.zero_()
+        self.next_node_projection[2].weight.data.uniform_(
+            -initrange, initrange
+        )
+        self.expand[0].bias.data.zero_()
+        self.expand[0].weight.data.uniform_(-initrange, initrange)
+        self.expand[2].bias.data.zero_()
+        self.expand[2].weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src, next_notes=None):
         batch_size = src.size(0)
-        if next_notes is not None:
-            sample = np.random.choice([True, False])
-        else:
+        if next_notes is None:
             sample = False
-        if sample:
-            # next_notes_one_hot = torch.zeros(next_notes.size(0), self.output_size)
-            # next_notes_one_hot.scatter_(1, next_notes, 1.)
-            encoded_next_notes = self.encoder(next_notes)
-            latent = self.next_node_projection(encoded_next_notes)
-            variation = self.expand(latent)
         else:
-            latent = None
-            variation = torch.zeros(
-                batch_size, self.embedding_size,
-                device=self.device
-            )
+            sample = np.random.choice([True, False], p=[0.6, 0.4])
         src = self.encoder(src) * torch.tensor(math.sqrt(self.embedding_size))
         src = self.pos_encoder(src)
         encoded_notes = self.transformer_encoder(src)
         x, _ = torch.max(encoded_notes, dim=1)
+        if sample:
+            encoded_next_notes = self.encoder(next_notes)
+            mu_logvar = self.next_node_projection(
+                encoded_next_notes).view(-1, 2, self.latent_size)
+            mu = mu_logvar[:, 0, :]
+            logvar = mu_logvar[:, 1, :]
+            latent = self.reparameterize(mu, logvar)
+        else:
+            mu = logvar = torch.zeros(batch_size, self.latent_size, device=self.device)
+            latent = self.reparameterize(mu, logvar)
+        variation = self.expand(latent)
         x = torch.add(x, variation)
         output = self.decoder(x)
-        return output, latent
+        return output, mu, logvar
 
 
 class PositionalEncoding(nn.Module):

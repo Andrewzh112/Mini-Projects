@@ -10,27 +10,14 @@ from preprocess import generate_sequences
 from transformers.optimization import get_linear_schedule_with_warmup
 
 
-def KL_Divergence(normal, pred_hidden):
-    mu1, mu2 = normal.mean(), pred_hidden.mean()
-    std1, std2 = normal.std(), pred_hidden.std()
-    p = torch.distributions.Normal(mu1, std1)
-    q = torch.distributions.Normal(mu2, std2)
-    kld = torch.distributions.kl.kl_divergence(p, q)
-    return kld.mean()
+def KL_Divergence(mu, logvar):
+    return 0.5 * torch.sum(logvar.exp() - logvar - 1 + mu.pow(2))
 
 
-def cross_entropy_and_KL(y_pred, y_true, device=config.DEVICE,
-                         pred_hidden=None, beta=1.):
-    ce_loss = torch.nn.functional.cross_entropy(y_pred, y_true)
-    divergence = 0
-    if pred_hidden is not None:
-        normal = torch.normal(
-            0, 1e-1, size=pred_hidden.size(),
-            device=device
-        )
-        # kl_divergence = torch.nn.KLDivLoss(reduction='batchmean')
-        divergence = KL_Divergence(normal, pred_hidden).to(device)
-    return ce_loss + beta*divergence
+def cross_entropy_and_KL(y_pred, y_true, mu, logvar):
+    cross_entropy_loss = torch.nn.functional.cross_entropy(y_pred, y_true)
+    kldivergence = KL_Divergence(mu, logvar)
+    return cross_entropy_loss + kldivergence
 
 
 def get_songs_datasets(sequence_length):
@@ -50,7 +37,8 @@ def get_song_loader(batch_size, sequence_length, shuffle=True):
 
 def train(output_dim, num_layers, embedding_dim, hidden_size,
           model_path, model_type, dropout, criterion, lr, epochs,
-          sequence_length, num_channels, kernels, nhead, batch_size, device):
+          sequence_length, num_channels, kernels, nhead,
+          warmup_epochs, batch_size, device):
     model_types = ('Transformer', 'CNN', 'LSTM')
     assert model_type in model_types, f'model_type must be one of {", ".join(model_types)}'
     song_loader = get_song_loader(batch_size, sequence_length)
@@ -71,7 +59,7 @@ def train(output_dim, num_layers, embedding_dim, hidden_size,
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr)
     num_training_steps = len(song_loader) * epochs
-    num_warmup_steps = 5
+    num_warmup_steps = len(song_loader) * warmup_epochs
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=num_warmup_steps,
         num_training_steps=num_training_steps
@@ -83,14 +71,13 @@ def train(output_dim, num_layers, embedding_dim, hidden_size,
             inputs, targets = inputs.to(device), targets.to(device)
             optimizer.zero_grad()
             if model_type == 'Transformer':
-                output, latent = model(inputs, targets)
-                loss = cross_entropy_and_KL(output, targets,
-                                            pred_hidden=latent)
+                output, mu, logvar = model(inputs, targets)
+                loss = cross_entropy_and_KL(output, targets, mu, logvar)
             else:
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
-            batch_losses.append(loss.item())
 
+            batch_losses.append(loss.item())
             loss.backward()
             optimizer.step()
             scheduler.step()
@@ -98,6 +85,7 @@ def train(output_dim, num_layers, embedding_dim, hidden_size,
         print(f'Epoch {epoch}/{epochs},\tLoss {np.mean(batch_losses)}\
               ,\tDuration {time.time()-start}')
         torch.save(model, model_path)
+    torch.save(model.to('cpu'), model_path)
 
 
 if __name__ == '__main__':
@@ -105,4 +93,5 @@ if __name__ == '__main__':
           model_path=config.MODEL_PATH, num_channels=config.NUM_CHANNELS, kernels=config.KERNELS,
           embedding_dim=config.EMBEDDING_DIM, hidden_size=config.HIDDEN_SIZE, nhead=config.NHEAD,
           dropout=config.DROPOUT, criterion=config.CRITERION, lr=config.LR, epochs=config.EPOCHS,
-          sequence_length=config.SEQUENCE_LENGTH, batch_size=config.BATCH_SIZE, device=config.DEVICE)
+          sequence_length=config.SEQUENCE_LENGTH, batch_size=config.BATCH_SIZE, device=config.DEVICE,
+          warmup_epochs=config.WARMUP_EPOCHS)

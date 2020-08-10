@@ -46,7 +46,7 @@ if __name__ == '__main__':
     model.eval()
     melody = model.generate_melody(config.NOTES_MAPPING, args.seed,
                                    config.NUM_STEPS, args.temperature,
-                                   config.TOPK)
+                                   config.ROUNDS, config.TOPK)
     # melody_long = model.generate_melody(config.NOTES_MAPPING, ' '.join(melody[:64]),
     #                             config.NUM_STEPS, config.TEMPERATURE)
     save_melody(melody, f'{config.OUTPUT_PATH}{args.file_name}.mid')
