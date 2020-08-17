@@ -6,19 +6,24 @@ from torch import optim
 import torch
 from tqdm import tqdm
 
+torch.autograd.set_detect_anomaly(True)
+
 
 def train(batch_size, epochs, lr, device):
-    model = CoupleFaceNet()
+    model = CoupleFaceNet().to(device)
     criterion = TripletLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
-    progress = tqdm(range(epochs), total=epochs)
     dataset = FaceData()
     idx2class = dataset.idx2class
-    for epoch in progress:
+    for epoch in tqdm(range(epochs), total=epochs):
         # randomize every epoch
         train_loader = get_loaders(batch_size=batch_size, seed=epoch)
-        batch_losses = []
-        for batch in train_loader:
+        batch_losses = 0
+        progress_bar = tqdm(train_loader,
+                            desc=f'Epoch {epoch + 1}/{epochs}',
+                            leave=False,
+                            disable=False)
+        for batch in progress_bar:
             optimizer.zero_grad()
             targets = torch.cat(batch['target'], dim=0).to(device)
             images = torch.cat(
@@ -27,11 +32,17 @@ def train(batch_size, epochs, lr, device):
             latents = model(images)
             loss = criterion(latents, targets)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.)
             optimizer.step()
-            batch_losses.append(loss.item())
-        print(
-            f'Epoch {epoch + 1}/epochs, Training Loss {sum(batch_losses) / len(batch_losses)}'
-        )
+            batch_losses += loss.item()
+            progress_bar.set_postfix(
+                {'Train Loss': '{:.3f}'.format(loss.item()/len(batch))}
+            )
+
+        torch.save(model.state_dict(), 'face_reid.pt')
+        tqdm.write(f'\nEpoch {epoch + 1}/{epochs}')
+        loss_train_avg = batch_losses / len(train_loader)
+        tqdm.write(f'Training loss: {loss_train_avg}')
 
 
 if __name__ == '__main__':

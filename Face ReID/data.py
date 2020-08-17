@@ -3,10 +3,13 @@ import torch
 from glob import glob
 import os
 import PIL
+from PIL import ImageFile
 from torch.utils.data import Dataset
 from tqdm import tqdm
 import random
 from torchvision import transforms
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 class FaceData(Dataset):
