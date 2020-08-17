@@ -4,6 +4,7 @@ from src.model import CoupleFaceNet
 import src.config as config
 from torch import optim
 import torch
+import os
 from tqdm import tqdm
 
 torch.autograd.set_detect_anomaly(True)
@@ -15,6 +16,7 @@ def train(batch_size, epochs, lr, device):
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
     dataset = FaceData()
     idx2class = dataset.idx2class
+    model.train()
     for epoch in tqdm(range(epochs), total=epochs):
         # randomize every epoch
         train_loader = get_loaders(batch_size=batch_size, seed=epoch)
@@ -39,7 +41,9 @@ def train(batch_size, epochs, lr, device):
                 {'Train Loss': '{:.3f}'.format(loss.item()/len(batch))}
             )
 
-        torch.save(model.state_dict(), 'face_reid.pt')
+        if not os.path.exists('model_weights'):
+            os.mkdir('model_weights') 
+        torch.save(model.state_dict(), os.path.join('model_weights', 'face_reid.pt'))
         tqdm.write(f'\nEpoch {epoch + 1}/{epochs}')
         loss_train_avg = batch_losses / len(train_loader)
         tqdm.write(f'Training loss: {loss_train_avg}')
