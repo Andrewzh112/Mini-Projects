@@ -7,8 +7,6 @@ import torch
 import os
 from tqdm import tqdm
 
-torch.autograd.set_detect_anomaly(True)
-
 
 def train(batch_size, epochs, lr, device):
     model = CoupleFaceNet().to(device)
@@ -16,11 +14,15 @@ def train(batch_size, epochs, lr, device):
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
     dataset = FaceData()
     idx2class = dataset.idx2class
-    model.train()
+    best_test_loss = float('inf')
     for epoch in tqdm(range(epochs), total=epochs):
         # randomize every epoch
         train_loader = get_loaders(batch_size=batch_size, seed=epoch)
+        test_loader = get_loaders(
+            batch_size=batch_size, seed=epoch, data_path='faces dev'
+        )
         batch_losses = 0
+        model.train()
         progress_bar = tqdm(train_loader,
                             desc=f'Epoch {epoch + 1}/{epochs}',
                             leave=False,
@@ -41,12 +43,29 @@ def train(batch_size, epochs, lr, device):
                 {'Train Loss': '{:.3f}'.format(loss.item()/len(batch))}
             )
 
-        if not os.path.exists('model_weights'):
-            os.mkdir('model_weights') 
-        torch.save(model.state_dict(), os.path.join('model_weights', 'face_reid.pt'))
         tqdm.write(f'\nEpoch {epoch + 1}/{epochs}')
         loss_train_avg = batch_losses / len(train_loader)
-        tqdm.write(f'Training loss: {loss_train_avg}')
+        tqdm.write(f'Train loss: {loss_train_avg}')
+
+        model.eval()
+        with torch.no_grad():
+            batch_losses = 0
+            for batch in test_loader:
+                targets = torch.cat(batch['target'], dim=0).to(device)
+                images = torch.cat(
+                    [batch[idx2class[0]], batch[idx2class[1]]], dim=0
+                ).to(device)
+                latents = model(images)
+                loss = criterion(latents, targets)
+                batch_losses += loss.item()
+        loss_test_avg = batch_losses / len(test_loader)
+        tqdm.write(f'Test loss: {loss_test_avg}')
+        if loss_test_avg <= best_test_loss:
+            if not os.path.exists('model_weights'):
+                os.mkdir('model_weights')
+            torch.save(model.state_dict(), os.path.join(
+                'model_weights', 'face_reid.pt'
+            ))
 
 
 if __name__ == '__main__':

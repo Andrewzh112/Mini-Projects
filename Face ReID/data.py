@@ -41,16 +41,12 @@ class FaceData(Dataset):
                     transforms.ToTensor(),
                     transforms.Normalize([0.485, 0.456, 0.406],
                                          [0.229, 0.224, 0.225]),
-                    transforms.Normalize([0.485, 0.456, 0.406],
-                                         [0.229, 0.224, 0.225]),
                 ]
             )
         else:
             transform = transforms.Compose(
                 [
                     transforms.ToTensor(),
-                    transforms.Normalize([0.485, 0.456, 0.406],
-                                         [0.229, 0.224, 0.225]),
                     transforms.Normalize([0.485, 0.456, 0.406],
                                          [0.229, 0.224, 0.225]),
                 ]
@@ -74,17 +70,17 @@ class FaceData(Dataset):
         return item
 
 
-def get_loaders(seed, shuffle=True, batch_size=64):
+def get_loaders(seed, data_path='faces', shuffle=True, batch_size=64):
     """Image dataset loaders"""
 
-    dataset = FaceData(seed)
+    dataset = FaceData(seed, data_path=data_path)
     loader = torch.utils.data.DataLoader(
         dataset, batch_size=batch_size, shuffle=shuffle
     )
     return loader
 
 
-def parse_faces(data_path, outpath):
+def parse_faces(data_path, outpath, predict=False):
     if not os.path.isdir(outpath):
         os.mkdir(outpath)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -96,8 +92,8 @@ def parse_faces(data_path, outpath):
         device=device
     )
 
-    imgs = glob(os.path.join(data_path, '*'))[149:]
-
+    imgs = glob(os.path.join(data_path, '*'))
+    faces = []
     for img_path in tqdm(imgs, total=len(imgs)):
         print(img_path)
         try:
@@ -112,10 +108,15 @@ def parse_faces(data_path, outpath):
                 continue
             face = img.crop(box)
             img_name = img_path.split('/')[-1]
+            if predict:
+                faces.append(face)
+                continue
             face.save(os.path.join(
                 outpath,
                 img_name.split('.')[0] + str(i) + '.' + img_name.split('.')[1])
             )
+    if predict:
+        return faces
 
 
 def resize_imgs(data_path):

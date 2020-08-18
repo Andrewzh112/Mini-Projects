@@ -3,7 +3,7 @@ from torch import nn
 
 
 class CoupleFaceNet(nn.Module):
-    def __init__(self, hidden_size=256, latent_size=64, pretrained=True):
+    def __init__(self, hidden_size=256, latent_size=128, pretrained=True):
         """
         Batch Mining Inspiration:
         https://arxiv.org/pdf/1703.07737.pdf
